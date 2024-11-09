@@ -18,6 +18,10 @@ on:
 jobs:
   deployment:
     runs-on: ubuntu-latest
+    env:
+      HOST_ENV: ${{ github.event.inputs.envronment == 'prod' && '35.223.63.105' || '35.223.63.105' }} 
+      SSH_USER: "ninho_wjr"
+      SSH_PORT: 22
     steps:
     - run: |
         echo "Ambiente de deployment: ${{ github.event.inputs.envronment }}"
@@ -29,16 +33,34 @@ jobs:
         webhook-url: ${{ secrets.WEBHOOK_URL }}
         content: "Deployment do app FAST-CI-CD:**${{ github.event.inputs.imageTag }}** disparado por **${{ github.actor }}** para o ambiente **${{ github.event.inputs.envronment }}**"
 
+    - name: 'Create env file'
+      run: |
+        touch .env
+        echo TEST_ENV_STRING="Meu secret via string" > .env
+        echo TEST_ENV_SECRET=${{ secrets.MY_SUPER_SECRET }} >> .env
+        cat .env
+
+    - name: copy file via ssh
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: "${{ env.HOST_ENV }}"
+        key: ${{ secrets.SSH_KEY }}
+        port: "${{ env.SSH_PORT }}"
+        username: "${{ env.SSH_USER }}"
+        source: ".env"
+        target: "/home/${{ env.SSH_USER }}/"
+
     - name: Deploy service
       uses: appleboy/ssh-action@v1.0.3
       with:
-        host: ${{ github.event.inputs.envronment == 'prod' && '34.42.174.171' || '34.42.174.171' }} 
-        username: ninho_wjr
+        host: "${{ env.HOST_ENV }}"
+        username: "${{ env.SSH_USER }}"
         key: ${{ secrets.SSH_KEY }}
-        port: 22
+        port: "${{ env.SSH_PORT }}"
         script: |
           sudo mkdir -p /todo-fast
           sudo docker service rm fast-ci-todo | true
-          sudo docker service create --name fast-ci-todo --replicas=5 -p 80:3000 \
+          sudo docker service create --name fast-ci-todo --replicas=3 -p 80:3000 \
             --mount type=bind,source=/todo-fast,destination=/etc/todos \
+            --mount type=bind,source=/home/${{ env.SSH_USER }}/,destination=/etc/env \
             waltenbergjr/fast-ci-cd:${{ github.event.inputs.imageTag }}
