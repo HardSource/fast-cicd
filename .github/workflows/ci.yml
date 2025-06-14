@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - 'main'
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - 'main'
@@ -24,8 +26,6 @@ jobs:
   grype:
     name: Grype
     runs-on: ubuntu-latest
-    needs: 
-      - lint
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -40,8 +40,6 @@ jobs:
   bearer:
     name: Bearer
     runs-on: ubuntu-latest
-    needs: 
-      - grype
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
@@ -54,9 +52,6 @@ jobs:
   sonarcloud:
     name: SonarCloud
     runs-on: ubuntu-latest
-    needs: 
-      # - grype
-      - bearer
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,8 +64,6 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
-    needs: 
-      - sonarcloud
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js
@@ -83,7 +76,11 @@ jobs:
   docker:
     name: Docker build and publish
     runs-on: ubuntu-latest
-    needs: 
+    needs:
+      - lint
+      - grype
+      - bearer
+      - sonarcloud
       - tests
     steps:
       - name: Set up QEMU
@@ -98,23 +95,64 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
+
+      - name: Extract metadata (tags and labels) for Docker
+        id: tag
+        uses: docker/metadata-action@v5
+        with:
+          images: waltenbergjr/fast-ci-cd
+          tags: |
+            # Se o gatilho foi uma tag (ex: v1.0.0), a imagem Docker terá a tag 'v1.0.0'
+            type=ref,event=tag
+            # Se o gatilho foi um push na branch 'main', a imagem terá duas tags: 'latest' e o hash do commit (ex: f1a2b3c)
+            type=raw,value=latest,enable={{is_default_branch}}
+            # Se o gatilho foi um pull request, a imagem terá a tag 'PR-numero-do-pr'
+            type=ref,event=pr,prefix=PR-
+            type=sha
+
+      - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           push: true
-          tags: waltenbergjr/fast-ci-cd:${{ github.event.number == 0 && 'latest' || format('PR-{0}', github.event.number) }}
+          tags: ${{ steps.tag.outputs.tags }}
+          labels: ${{ steps.tag.outputs.labels }}
 
-  deployment:
-    name: Deployment trigger
-    runs-on: ubuntu-latest
-    needs: 
-      - docker
-    steps:
-      - name: Disparar deployment em dev
-        uses: benc-uk/workflow-dispatch@v1
-        env:
-          IMAGE_TAG: ${{ github.event.number == 0 && 'latest' || format('PR-{0}', github.event.number) }}
+
+      - name: Format tags for PR comment
+        if: github.event_name == 'pull_request'
+        id: format_tags
+        run: |
+          # Pega a saída de tags e troca vírgulas por quebras de linha
+          TAGS_BODY=$(echo "${{ steps.tag.outputs.tags }}" | sed 's/,/\n/g')
+          echo "comment_body<<EOF" >> $GITHUB_OUTPUT
+          echo "$TAGS_BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create or update PR comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
         with:
-          workflow: cd.yml
-          inputs: '{ "envronment": "dev", "imageTag": "${{ env.IMAGE_TAG }}" }'
-          token: "${{ secrets.TOKEN_GITHUB }}"
+          token: ${{ secrets.TOKEN_GITHUB }}
+          comment-identifier: 'docker-published-tags-comment'
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            ## ✅ Imagem publicada com sucesso!
+            **Tags publicadas:**
+            ```
+            ${{ steps.format_tags.outputs.comment_body }}
+
+  # deployment:
+  #   name: Deployment trigger
+  #   runs-on: ubuntu-latest
+  #   needs: 
+  #     - docker
+  #   steps:
+  #     - name: Disparar deployment em dev
+  #       uses: benc-uk/workflow-dispatch@v1
+  #       env:
+  #         IMAGE_TAG: ${{ github.event.number == 0 && 'latest' || format('PR-{0}', github.event.number) }}
+  #       with:
+  #         workflow: cd.yml
+  #         inputs: '{ "envronment": "dev", "imageTag": "${{ env.IMAGE_TAG }}" }'
+  #         token: "${{ secrets.TOKEN_GITHUB }}"
