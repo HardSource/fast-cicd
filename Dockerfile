@@ -4,8 +4,6 @@ WORKDIR /app
 
 COPY . .
 
-COPY nao_existe .
-
 RUN yarn install --production
 CMD ["node", "src/index.js"]
 
