@@ -3,7 +3,7 @@ name : fast-cd
 on:
   workflow_dispatch:
     inputs:
-      envronment:
+      environment:
         type: choice
         description: 'Ambiente de deployment'     
         required: true
@@ -19,19 +19,19 @@ jobs:
   deployment:
     runs-on: ubuntu-latest
     env:
-      HOST_ENV: ${{ github.event.inputs.envronment == 'prod' && '35.223.63.105' || '35.223.63.105' }} 
+      HOST_ENV: ${{ github.event.inputs.environment == 'prod' && '35.223.63.105' || '35.223.63.105' }} 
       SSH_USER: "ninho_wjr"
       SSH_PORT: 22
     steps:
     - run: |
-        echo "Ambiente de deployment: ${{ github.event.inputs.envronment }}"
+        echo "Ambiente de deployment: ${{ github.event.inputs.environment }}"
         echo "imageTag: ${{ github.event.inputs.imageTag }}"
 
     - name: Discord Notification
       uses: tsickert/discord-webhook@v5.3.0
       with:
         webhook-url: ${{ secrets.WEBHOOK_URL }}
-        content: "Deployment do app FAST-CI-CD:**${{ github.event.inputs.imageTag }}** disparado por **${{ github.actor }}** para o ambiente **${{ github.event.inputs.envronment }}**"
+        content: "Deployment do app FAST-CI-CD:**${{ github.event.inputs.imageTag }}** disparado por **${{ github.actor }}** para o ambiente **${{ github.event.inputs.environment }}**"
 
     - name: 'Create env file'
       run: |
