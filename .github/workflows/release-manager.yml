@@ -1,0 +1,76 @@
+name: release-manager
+
+on:
+  push:
+    branches:
+      - 'main'
+    # Importante: Ignora tags para evitar loop infinito (tag gera push, que gera tag...)
+    tags-ignore:
+      - '*.*'
+
+permissions:
+  contents: write # Necessário para criar Releases e Tags
+
+jobs:
+  release:
+    name: 🚀 Create Release & Changelog
+    runs-on: ubuntu-latest
+    # Só roda se o commit não for do próprio bot de release (segurança contra loops)
+    if: "!contains(github.event.head_commit.message, 'chore(release):')"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Necessário para ler todo o histórico de commits e calcular a versão
+
+      # 1. O Cérebro: Analisa commits e calcula a próxima versão (SemVer)
+      # Se tiver commit "fix:", sobe PATCH (v1.0.0 -> v1.0.1)
+      # Se tiver commit "feat:", sobe MINOR (v1.0.0 -> v1.1.0)
+      # Se tiver "BREAKING CHANGE:", sobe MAJOR (v1.0.0 -> v2.0.0)
+      - name: Calculate Next Version
+        id: version
+        uses: mathieudutour/github-tag-action@v6.1
+        with:
+          github_token: ${{ secrets.TOKEN_GITHUB }}
+          dry_run: false
+          default_bump: patch # Se não achar nada específico, assume que é patch
+          fetch_all_tags: true
+
+      # 2. Gera o texto do Changelog baseada nos commits desde a última tag
+      - name: Generate Changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: "configuration.json" # Opcional: pode usar config padrão se omitir
+          toTag: ${{ steps.version.outputs.new_tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+
+      # 3. Cria a Release oficial no GitHub
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          name: Release ${{ steps.version.outputs.new_tag }}
+          body: |
+            ## 🌟 O que há de novo?
+            
+            ${{ steps.changelog.outputs.changelog }}
+            
+            ---
+            *Release gerada automaticamente via GitHub Actions*
+          draft: false # Se colocar true, cria um rascunho para aprovação humana
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+
+      # 4. (Opcional/Avançado) Atualiza o package.json com a nova versão e commita de volta
+      # Isso é ótimo para Node.js, mas requer cuidado com permissões de push
+      - name: Bump version in package.json
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          npm version ${{ steps.version.outputs.new_version }} --no-git-tag-version
+          git add package.json
+          git commit -m "chore(release): update to ${{ steps.version.outputs.new_tag }}"
+          git push origin main
