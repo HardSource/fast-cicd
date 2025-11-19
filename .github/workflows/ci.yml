@@ -11,130 +11,164 @@ on:
       - 'main'
 
 jobs:
-  lint:
-    name: Lint
+  # 1. NOVO: Garante que as mensagens de commit seguem padrão (ex: feat: nova tela)
+  commit-lint:
+    name: Commit Lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' # Só roda em PRs para não travar pushes diretos na aula
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate Commit Messages
+        uses: wagoid/commitlint-github-action@v5
+        # Dica para aula: Explique que isso evita histórico bagunçado
+
+  # 2. NOVO: Checa segurança específica das bibliotecas Node
+  audit:
+    name: NPM Audit Security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '18.x'
-      - run: npm run ci
+      - run: npm audit --audit-level=high || true # "|| true" para não quebrar a aula se tiver vulnerabilidade, mas mostra o log vermelho
+
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      - run: npm ci
       - run: npm run lint || true
 
   grype:
-    name: Grype
+    name: Grype Vuln Scan
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-      - name: Scan current project
-        uses: anchore/scan-action@v3
-        id: scan
+      - uses: actions/checkout@v4
+      - uses: anchore/scan-action@v3
         with:
           path: "."
           fail-build: false
           output-format: table
 
   bearer:
-    name: Bearer
+    name: Bearer SAST
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-      - name: Run Report
-        id: report
-        uses: bearer/bearer-action@v2
+      - uses: actions/checkout@v4
+      - uses: bearer/bearer-action@v2
         with:
           exit-code: 0
 
   sonarcloud:
-    name: SonarCloud
+    name: SonarCloud Quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+      - uses: SonarSource/sonarcloud-github-action@master
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   tests:
-    name: Tests
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '18.x'
-      - run: npm run ci
-      - run: sudo npm test
+      - run: npm ci
+      - run: npm test
+
+  # 3. NOVO: Simula o build da aplicação e salva os arquivos
+  build-app:
+    name: Build Application
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      - run: npm ci
+      # Se não tiver script de build no package.json, crie um dummy ou remova essa linha
+      - run: npm run build --if-present 
+      
+      # Didático: Mostra como passar arquivos de um job para outro ou para download
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-build-files
+          path: |
+            dist
+            build
+            package.json
+          retention-days: 1
 
   docker:
-    name: Docker build and publish
+    name: Docker Publish
     runs-on: ubuntu-latest
     needs:
+      - commit-lint
+      - audit
       - lint
       - grype
       - bearer
       - sonarcloud
       - tests
+      - build-app
     steps:
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - uses: actions/checkout@v4
+      
+      # Opcional: Baixar o artefato do passo anterior (didático, mesmo que o docker faça build multistage)
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: app-build-files
+          path: ./downloaded-artifacts
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      
+      - uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          push: true
-          tags: waltenbergjr/fast-ci-cd:latest
-
-
-      - name: Extract metadata (tags and labels) for Docker
-        id: tag
+      - id: tag
         uses: docker/metadata-action@v5
         with:
           images: waltenbergjr/fast-ci-cd
           tags: |
-            # Se o trigger foi uma tag (ex: v1.0.0), a imagem Docker terá a tag 'v1.0.0'
             type=ref,event=tag
-            # Se o trigger foi um push na branch 'main', a imagem terá duas tags: 'latest' e o hash do commit (ex: f1a2b3c)
             type=raw,value=latest,enable={{is_default_branch}}
-            # Se o trigger foi um pull request, a imagem terá a tag 'PR-numero-do-pr'
             type=ref,event=pr,prefix=PR-
             type=sha
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
+          context: .
           push: true
           tags: ${{ steps.tag.outputs.tags }}
           labels: ${{ steps.tag.outputs.labels }}
 
-
-      - name: Format tags for PR comment
+      - name: Format tags for PR
         if: github.event_name == 'pull_request'
         id: format_tags
         run: |
-          # Pega o output de tags e troca vírgulas por quebras de linha
           TAGS_BODY=$(echo "${{ steps.tag.outputs.tags }}" | sed 's/,/\n/g')
           echo "comment_body<<EOF" >> $GITHUB_OUTPUT
           echo "$TAGS_BODY" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create or update PR comment
+      - name: Comment on PR
         if: github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v4
         with:
@@ -143,22 +177,38 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           edit-mode: replace
           body: |
-            ## ✅ Imagem publicada com sucesso!
-            **Tags publicadas:**
+            ## 🐳 Docker Image Ready!
+            **Tags:**
             ```
             ${{ steps.format_tags.outputs.comment_body }}
+            ```
 
   deployment:
-    name: Deployment trigger
+    name: Trigger Deploy
     runs-on: ubuntu-latest
-    needs: 
-      - docker
+    needs: docker
     steps:
-      - name: Disparar deployment em dev
-        uses: benc-uk/workflow-dispatch@v1
+      - uses: benc-uk/workflow-dispatch@v1
         env:
           IMAGE_TAG: ${{ github.event.number == 0 && 'latest' || format('PR-{0}', github.event.number) }}
         with:
           workflow: cd.yml
           inputs: '{ "envronment": "dev", "imageTag": "${{ env.IMAGE_TAG }}" }'
           token: "${{ secrets.TOKEN_GITHUB }}"
+
+  # 4. NOVO: Notificação Final (ChatOps Simples)
+  notify:
+    name: Notification
+    runs-on: ubuntu-latest
+    if: always() # Roda mesmo se os jobs anteriores falharem
+    needs: [deployment, docker] # Espera o final
+    steps:
+      - name: Notify Status
+        run: |
+          echo "::notice title=Status da Pipeline::A execução terminou!"
+          if [ "${{ needs.docker.result }}" == "success" ]; then
+            echo "✅ SUCESSO: Imagem Docker gerada e Deploy disparado."
+          else
+            echo "❌ FALHA: Algo deu errado no processo."
+            exit 1
+          fi
