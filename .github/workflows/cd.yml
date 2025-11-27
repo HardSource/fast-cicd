@@ -81,6 +81,7 @@ jobs:
             CONFIG_PATH="/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
             
             echo "Atualizando serviço: $SERVICE_NAME com a imagem $IMAGE"
+            sudo mkdir -p /todo-fast
             
             # Verifica se o serviço já existe
             if sudo docker service inspect $SERVICE_NAME; then
@@ -96,7 +97,7 @@ jobs:
                   --replicas 3 \
                   -p 80:3000 \
                   --mount type=bind,source=/todo-fast,destination=/etc/todos \
-                  --mount type=bind,source=$CONFIG_PATH,destination=/etc/env \
+                  --mount type=bind,source=/home/${{ env.SSH_USER }}/,destination=/etc/env \
                   $IMAGE
             fi
 
