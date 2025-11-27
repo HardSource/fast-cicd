@@ -70,7 +70,7 @@ jobs:
           port: ${{ env.SSH_PORT }}
           script: |
             SERVICE_NAME="fast-ci-todo-${{ inputs.environment }}"
-            IMAGE="waltenbergjr/fast-ci-cd:${{ inputs.imageTag }}"
+            IMAGE="dockercloud/hello-world"
             CONFIG_PATH="/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
             
             echo "Atualizando serviço: $SERVICE_NAME com a imagem $IMAGE"
@@ -87,9 +87,8 @@ jobs:
                 docker service create \
                   --name $SERVICE_NAME \
                   --replicas 3 \
-                  -p 80:3000 \
+                  -p 80:80 \
                   --mount type=bind,source=/todo-fast,destination=/etc/todos \
-
                   $IMAGE
             fi
 
