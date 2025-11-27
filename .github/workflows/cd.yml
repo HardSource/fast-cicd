@@ -69,6 +69,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ env.SSH_PORT }}
           script: |
+            set -x
             SERVICE_NAME="fast-ci-todo"
             IMAGE="dockercloud/hello-world"
             CONFIG_PATH="/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
@@ -76,7 +77,7 @@ jobs:
             echo "Atualizando serviço: $SERVICE_NAME com a imagem $IMAGE"
             
             # Verifica se o serviço já existe
-            if docker service inspect $SERVICE_NAME > /dev/null 2>&1; then
+            if sudo docker service inspect $SERVICE_NAME; then
                 echo "Serviço existe. Realizando Rolling Update..."
                 # Update mantém o serviço de pé enquanto atualiza (Zero Downtime)
                 sudo docker service update \
