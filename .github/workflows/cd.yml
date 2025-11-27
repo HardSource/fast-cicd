@@ -69,7 +69,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ env.SSH_PORT }}
           script: |
-            SERVICE_NAME="fast-ci-todo-${{ inputs.environment }}"
+            SERVICE_NAME="fast-ci-todo"
             IMAGE="dockercloud/hello-world"
             CONFIG_PATH="/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
             
