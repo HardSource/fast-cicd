@@ -28,9 +28,9 @@ jobs:
         id: set-ip
         run: |
           if [ "${{ inputs.environment }}" == "prod" ]; then
-             echo "host_ip=35.223.63.105" >> $GITHUB_OUTPUT
+             echo "host_ip=3.235.194.231" >> $GITHUB_OUTPUT
           else
-             echo "host_ip=35.223.63.105" >> $GITHUB_OUTPUT
+             echo "host_ip=3.235.194.231" >> $GITHUB_OUTPUT
           fi
 
       - name: Create .env file
