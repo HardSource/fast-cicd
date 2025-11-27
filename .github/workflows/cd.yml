@@ -48,18 +48,18 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       HOST_ENV: ${{ needs.prepare.outputs.host_ip }}
-      SSH_USER: "ninho_wjr"
+      SSH_USER: "ubuntu"
       SSH_PORT: 22
     steps:
-      - name: Copy config via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ env.HOST_ENV }}
-          username: ${{ env.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ env.SSH_PORT }}
-          source: ".env"
-          target: "/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
+      # - name: Copy config via SCP
+      #   uses: appleboy/scp-action@v0.1.7
+      #   with:
+      #     host: ${{ env.HOST_ENV }}
+      #     username: ${{ env.SSH_USER }}
+      #     key: ${{ secrets.SSH_KEY }}
+      #     port: ${{ env.SSH_PORT }}
+      #     source: ".env"
+      #     target: "/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
 
       - name: Execute Remote Docker Command
         uses: appleboy/ssh-action@v1.0.3
@@ -89,7 +89,7 @@ jobs:
                   --replicas 3 \
                   -p 80:3000 \
                   --mount type=bind,source=/todo-fast,destination=/etc/todos \
-                  --mount type=bind,source=$CONFIG_PATH,destination=/etc/env \
+
                   $IMAGE
             fi
 
