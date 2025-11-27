@@ -79,12 +79,12 @@ jobs:
             if docker service inspect $SERVICE_NAME > /dev/null 2>&1; then
                 echo "Serviço existe. Realizando Rolling Update..."
                 # Update mantém o serviço de pé enquanto atualiza (Zero Downtime)
-                docker service update \
+                sudo docker service update \
                   --image $IMAGE \
                   $SERVICE_NAME
             else
                 echo "Serviço não existe. Criando..."
-                docker service create \
+                sudo docker service create \
                   --name $SERVICE_NAME \
                   --replicas 3 \
                   -p 80:80 \
