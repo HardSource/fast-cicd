@@ -97,10 +97,9 @@ jobs:
                   --replicas 3 \
                   -p 80:3000 \
                   --mount type=bind,source=/todo-fast,destination=/etc/todos \
-                  --mount type=bind,source=/home/${{ env.SSH_USER }}/,destination=/etc/env \
                   $IMAGE
             fi
-
+#                   --mount type=bind,source=/home/${{ env.SSH_USER }}/,destination=/etc/env \
   health-check:
     name: 🩺 Smoke Test
     runs-on: ubuntu-latest
