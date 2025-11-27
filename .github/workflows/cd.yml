@@ -1,4 +1,4 @@
-name : fast-cd
+name: fast-cd
 
 on:
   workflow_dispatch:
@@ -12,55 +12,123 @@ on:
         - prod
       imageTag:
         required: true
-        description: 'Deployment image tag'
+        description: 'Tag da imagem Docker'
         default: 'latest'
 
+run-name: Deploy ${{ inputs.environment }} - ${{ inputs.imageTag }}
+
 jobs:
-  deployment:
+  prepare:
+    name: 🚧 Prepare Config
     runs-on: ubuntu-latest
+    outputs:
+      host_ip: ${{ steps.set-ip.outputs.host_ip }}
+    steps:
+      - name: Set Environment IP
+        id: set-ip
+        run: |
+          if [ "${{ inputs.environment }}" == "prod" ]; then
+             echo "host_ip=35.223.63.105" >> $GITHUB_OUTPUT
+          else
+             echo "host_ip=35.223.63.105" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create .env file
+        run: |
+          echo "Gerando arquivo de configuração..."
+          echo "ENV_TYPE=${{ inputs.environment }}" > .env
+          echo "APP_VERSION=${{ inputs.imageTag }}" >> .env
+          echo "MY_SUPER_SECRET=${{ secrets.MY_SUPER_SECRET }}" >> .env
+          # Não devemos dar 'cat' em secrets no log, apenas arquivos públicos
+
+  deploy:
+    name: 🚀 Deploy to Server
+    runs-on: ubuntu-latest
+    needs: prepare
+    environment: ${{ inputs.environment }}
     env:
-      HOST_ENV: ${{ github.event.inputs.environment == 'prod' && '35.223.63.105' || '35.223.63.105' }} 
+      HOST_ENV: ${{ needs.prepare.outputs.host_ip }}
       SSH_USER: "ninho_wjr"
       SSH_PORT: 22
     steps:
-    - run: |
-        echo "Ambiente de deployment: ${{ github.event.inputs.environment }}"
-        echo "imageTag: ${{ github.event.inputs.imageTag }}"
+      - name: Copy config via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HOST_ENV }}
+          username: ${{ env.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
+          source: ".env"
+          target: "/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
 
-    - name: Discord Notification
-      uses: tsickert/discord-webhook@v5.3.0
-      with:
-        webhook-url: ${{ secrets.WEBHOOK_URL }}
-        content: "Deployment do app FAST-CI-CD:**${{ github.event.inputs.imageTag }}** disparado por **${{ github.actor }}** para o ambiente **${{ github.event.inputs.environment }}**"
+      - name: Execute Remote Docker Command
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.HOST_ENV }}
+          username: ${{ env.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ env.SSH_PORT }}
+          script: |
+            SERVICE_NAME="fast-ci-todo-${{ inputs.environment }}"
+            IMAGE="waltenbergjr/fast-ci-cd:${{ inputs.imageTag }}"
+            CONFIG_PATH="/home/${{ env.SSH_USER }}/.env.${{ inputs.environment }}"
+            
+            echo "Atualizando serviço: $SERVICE_NAME com a imagem $IMAGE"
+            
+            # Verifica se o serviço já existe
+            if docker service inspect $SERVICE_NAME > /dev/null 2>&1; then
+                echo "Serviço existe. Realizando Rolling Update..."
+                # Update mantém o serviço de pé enquanto atualiza (Zero Downtime)
+                docker service update \
+                  --image $IMAGE \
+                  $SERVICE_NAME
+            else
+                echo "Serviço não existe. Criando..."
+                docker service create \
+                  --name $SERVICE_NAME \
+                  --replicas 3 \
+                  -p 80:3000 \
+                  --mount type=bind,source=/todo-fast,destination=/etc/todos \
+                  --mount type=bind,source=$CONFIG_PATH,destination=/etc/env \
+                  $IMAGE
+            fi
 
-    - name: 'Create env file'
-      run: |
-        touch .env
-        echo TEST_ENV_STRING="Meu secret via string" > .env
-        echo TEST_ENV_SECRET=${{ secrets.MY_SUPER_SECRET }} >> .env
-        cat .env
+  # 3. NOVO: Validação (Smoke Test)
+  health-check:
+    name: 🩺 Smoke Test
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy]
+    env:
+      HOST_ENV: ${{ needs.prepare.outputs.host_ip }}
+    steps:
+      - name: Check HTTP Status
+        run: |
+          echo "Aguardando aplicação estabilizar..."
+          sleep 10 # Dá um tempo para o container subir
+          
+          # Tenta bater no IP. Se retornar 200 OK, passa. Se der erro, falha a pipeline.
+          # --fail faz o curl retornar erro se o HTTP status for >= 400
+          curl --fail http://${{ env.HOST_ENV }}:80 || exit 1
+          
+          echo "✅ Aplicação respondendo corretamente!"
 
-    - name: copy file via ssh
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: "${{ env.HOST_ENV }}"
-        key: ${{ secrets.SSH_KEY }}
-        port: "${{ env.SSH_PORT }}"
-        username: "${{ env.SSH_USER }}"
-        source: ".env"
-        target: "/home/${{ env.SSH_USER }}/"
+  # 4. NOTIFICAÇÃO FINAL
+  notify-status:
+    name: 🔔 Final Notification
+    runs-on: ubuntu-latest
+    if: always() # Roda independente de erro ou sucesso
+    needs: [deploy, health-check]
+    steps:
+      - name: Notify Success
+        if: needs.health-check.result == 'success'
+        uses: tsickert/discord-webhook@v5.3.0
+        with:
+          webhook-url: ${{ secrets.WEBHOOK_URL }}
+          content: "✅ **Deploy Concluído com Sucesso!**\nAplicação disponível em: http://${{ env.HOST_ENV }}"
 
-    - name: Deploy service
-      uses: appleboy/ssh-action@v1.0.3
-      with:
-        host: "${{ env.HOST_ENV }}"
-        username: "${{ env.SSH_USER }}"
-        key: ${{ secrets.SSH_KEY }}
-        port: "${{ env.SSH_PORT }}"
-        script: |
-          sudo mkdir -p /todo-fast
-          sudo docker service rm fast-ci-todo | true
-          sudo docker service create --name fast-ci-todo --replicas=3 -p 80:3000 \
-            --mount type=bind,source=/todo-fast,destination=/etc/todos \
-            --mount type=bind,source=/home/${{ env.SSH_USER }}/,destination=/etc/env \
-            waltenbergjr/fast-ci-cd:${{ github.event.inputs.imageTag }}
+      - name: Notify Failure
+        if: needs.health-check.result != 'success'
+        uses: tsickert/discord-webhook@v5.3.0
+        with:
+          webhook-url: ${{ secrets.WEBHOOK_URL }}
+          content: "🚨 **FALHA no Deploy**\nVerifique os logs no GitHub Actions."

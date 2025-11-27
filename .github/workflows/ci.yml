@@ -11,8 +11,20 @@ on:
       - 'main'
 
 jobs:
+  # Garante que as mensagens de commit seguem padrão (ex: feat: nova tela)
+  commit-lint:
+    name: Commit Lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' # Só roda em PRs para não travar pushes diretos na aula
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate Commit Messages
+        uses: wagoid/commitlint-github-action@v5
+
   lint:
-    name: Lint
+    name: Lint Code
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +35,19 @@ jobs:
       - run: npm run ci
       - run: npm run lint || true
 
+  # ALTERNATIVA AO GRYPE
+  audit:
+    name: NPM Audit Security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+      - run: npm audit --audit-level=high || true
+
   grype:
-    name: Grype
+    name: Grype Vuln Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
@@ -38,7 +61,7 @@ jobs:
           output-format: table
 
   bearer:
-    name: Bearer
+    name: Bearer SAST
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source code
@@ -50,7 +73,7 @@ jobs:
           exit-code: 0
 
   sonarcloud:
-    name: SonarCloud
+    name: SonarCloud Quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,7 +85,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   tests:
-    name: Tests
+    name: Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
