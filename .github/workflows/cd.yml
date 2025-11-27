@@ -92,7 +92,6 @@ jobs:
                   $IMAGE
             fi
 
-  # 3. NOVO: Validação (Smoke Test)
   health-check:
     name: 🩺 Smoke Test
     runs-on: ubuntu-latest
@@ -111,11 +110,10 @@ jobs:
           
           echo "✅ Aplicação respondendo corretamente!"
 
-  # 4. NOTIFICAÇÃO FINAL
   notify-status:
     name: 🔔 Final Notification
     runs-on: ubuntu-latest
-    if: always() # Roda independente de erro ou sucesso
+    if: always()
     needs: [deploy, health-check]
     env:
       HOST_ENV: ${{ needs.prepare.outputs.host_ip }}
@@ -125,11 +123,11 @@ jobs:
         uses: tsickert/discord-webhook@v5.3.0
         with:
           webhook-url: ${{ secrets.WEBHOOK_URL }}
-          content: "✅ **Deploy Concluído com Sucesso!**\nAplicação disponível em: http://${{ env.HOST_ENV }}"
+          content: "✅ **Deploy Concluído com Sucesso!**"
 
       - name: Notify Failure
         if: needs.health-check.result != 'success'
         uses: tsickert/discord-webhook@v5.3.0
         with:
           webhook-url: ${{ secrets.WEBHOOK_URL }}
-          content: "🚨 **FALHA no Deploy**\nVerifique os logs no GitHub Actions."
+          content: "🚨 **FALHA no Deploy**"
