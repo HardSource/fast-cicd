@@ -124,7 +124,7 @@ jobs:
         uses: tsickert/discord-webhook@v5.3.0
         with:
           webhook-url: ${{ secrets.WEBHOOK_URL }}
-          content: "✅ **Deploy Concluído com Sucesso!**\nAplicação disponível em: http://${{ env.HOST_ENV }}"
+          content: "✅ **Deploy Concluído com Sucesso!**\nAplicação disponível em: http://$HOST_ENV"
 
       - name: Notify Failure
         if: needs.health-check.result != 'success'
