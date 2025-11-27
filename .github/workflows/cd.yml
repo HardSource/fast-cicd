@@ -41,6 +41,12 @@ jobs:
           echo "MY_SUPER_SECRET=${{ secrets.MY_SUPER_SECRET }}" >> .env
           # Não devemos dar 'cat' em secrets no log, apenas arquivos públicos
 
+      - name: 🔔 Initial Notification
+        uses: tsickert/discord-webhook@v5.3.0
+        with:
+          webhook-url: ${{ secrets.WEBHOOK_URL }}
+          content: "🚀 Deployment do app FAST-CI-CD:**${{ github.event.inputs.imageTag }}** disparado por **${{ github.actor }}** para o ambiente **${{ github.event.inputs.environment }}**..."
+
   deploy:
     name: 🚀 Deploy to Server
     runs-on: ubuntu-latest
