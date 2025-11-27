@@ -116,6 +116,8 @@ jobs:
     runs-on: ubuntu-latest
     if: always() # Roda independente de erro ou sucesso
     needs: [deploy, health-check]
+    env:
+      HOST_ENV: ${{ needs.prepare.outputs.host_ip }}
     steps:
       - name: Notify Success
         if: needs.health-check.result == 'success'
