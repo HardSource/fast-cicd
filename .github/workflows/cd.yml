@@ -88,7 +88,6 @@ jobs:
                   --name $SERVICE_NAME \
                   --replicas 3 \
                   -p 80:80 \
-                  --mount type=bind,source=/todo-fast,destination=/etc/todos \
                   $IMAGE
             fi
 
